@@ -1,4 +1,4 @@
-name: Build & Push R Base Image
+name: Build & Push R Base Images
 
 on:
   push:
@@ -7,12 +7,30 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/faucet-r-base
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # full: versión completa de R que compila install_R_source.sh
+        # tag:  etiqueta de la imagen publicada en GHCR
+        r_version:
+          - { full: '4.1.3', tag: 'r4.1' }
+          - { full: '4.2.2', tag: 'r4.2' }
+          - { full: '4.3.3', tag: 'r4.3' }
+          - { full: '4.4.1', tag: 'r4.4' }
+          - { full: '4.5.0', tag: 'r4.5' }
+          - { full: '4.6.0', tag: 'r4.6' }
+
+    name: R ${{ matrix.r_version.tag }}
 
     steps:
       - uses: actions/checkout@v4
@@ -24,9 +42,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Determinar tags de la imagen
+        id: tags
+        run: |
+          TAGS="${IMAGE}:${{ matrix.r_version.tag }}"
+          # La versión más nueva publica también :latest
+          if [ "${{ matrix.r_version.full }}" = "4.6.0" ]; then
+            TAGS="${TAGS},${IMAGE}:latest"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ghcr.io/${{ github.repository_owner }}/faucet-r-base:latest
+          build-args: |
+            R_VERSION=${{ matrix.r_version.full }}
+          tags: ${{ steps.tags.outputs.tags }}
